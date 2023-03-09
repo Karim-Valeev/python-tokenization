@@ -1,37 +1,60 @@
-import requests
-from lxml import html
+import os
+import re
+
+import nltk
+from bs4 import BeautifulSoup
+from nltk.corpus import stopwords
+from nltk.tokenize import RegexpTokenizer
+from pymorphy2 import MorphAnalyzer
+
+nltk.download('stopwords')
+nltk.download('punkt')
+nltk.download('snowball_data')
+nltk.download('perluniprops')
+nltk.download('universal_tagset')
+nltk.download('stopwords')
+nltk.download('nonbreaking_prefixes')
+nltk.download('wordnet')
+STOPWORDS = stopwords.words('english')
+
+
+def get_tokens(s: str) -> list:
+    tokenizer = RegexpTokenizer('[A-Za-z]+')
+    clean_words = tokenizer.tokenize(s)
+    clean_words = [word.lower() for word in clean_words if word != '']
+    clean_words = [word for word in clean_words if word not in STOPWORDS]
+    return clean_words
+
+
+def get_lemmas(tokens: set) -> dict:
+    pymorphy2_analyzer = MorphAnalyzer()
+    lemmas = {}
+    for token in tokens:
+        if re.match(r'[A-Za-z]', token):
+            lemma = pymorphy2_analyzer.parse(token)[0].normal_form
+            if lemmas.get(lemma):
+                lemmas[lemma].append(token)
+            else:
+                lemmas[lemma] = [token]
+    return lemmas
 
 
 if __name__ == '__main__':
-    url = 'https://en.wikipedia.org/wiki/List_of_programming_languages'
-    result = requests.get(url)
-    tree = html.fromstring(result.content)
+    filename_template = '../data/site_%s.html'
+    tokens = set()
+    for i in range(1, 101):
+        site_filename = os.path.abspath('../data/site_%s.html')
+        with open(filename_template % i, 'r') as f:
+            text = f.read()
+            soup = BeautifulSoup(text, 'html.parser')
+            text = ' '.join(soup.stripped_strings)
+            tokens.update(get_tokens(text))
 
-    index = []
+    lemmas = get_lemmas(tokens)
 
-    ulA = tree.xpath('//*[@id="mw-content-text"]/div[1]/div[2]/ul')
+    with open('../tokens.txt', 'w') as f:
+        f.write('\n'.join(tokens))
 
-    counter = 1
-    for li in ulA[0]:
-        inner_url = url + li[0].get('href')
-        result = requests.get(inner_url)
-        filename = f'site_{counter}.html'
-        with open('../data/' + filename, 'wb') as f:
-            f.write(result.content)
-            counter += 1
-            index.append(f'{filename} - {inner_url}')
-
-    ulC = tree.xpath('//*[@id="mw-content-text"]/div[1]/div[4]/ul')
-
-    for li in ulC[0]:
-        inner_url = url + li[0].get('href')
-        result = requests.get(inner_url)
-        filename = f'../data/site_{counter}.html'
-        with open(filename, 'wb') as f:
-            f.write(result.content)
-            counter += 1
-            index.append(f'{filename} - {inner_url}')
-
-    with open('index.txt', 'w') as f:
-        for line in index:
-            f.write(line + '\n')
+    with open('../lemmas.txt', 'w') as f:
+        for lemma, tokens in lemmas.items():
+            f.write(f'{lemma} ' + ' '.join(tokens) + '\n')
